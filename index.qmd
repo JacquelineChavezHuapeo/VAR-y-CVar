@@ -1,0 +1,272 @@
+---
+title: "VaR y CVaR del SPGSCI"
+author:
+  - name: "Chávez Huapeo Jacqueline"
+    affiliations: "Universidad Michoacana de San Nicólas de Hidalgo" 
+    email: "2002159x@umich.mx"
+  - name: "López Carmona Audrey Carolina"
+    email: "2209983d@umich.mx"
+  - name: "Rosas Moreno Alesi"
+    email: "2209988c@umich.mx"
+toc: TRUE
+format:  html
+editor: visual
+---
+
+```{r, include=FALSE}
+library(plotly)
+library(tidyverse)
+library(lubridate)
+library(tidyquant)
+# Se extrae la tabla histÃ³rica de datos de  S&P500:
+datosPL <- read.csv("https://raw.githubusercontent.com/OscarVDelatorreTorres/riskManagementSuiteR/main/PLDiario.csv")
+datosR <- read.csv("https://raw.githubusercontent.com/OscarVDelatorreTorres/riskManagementSuiteR/main/renContSemanal.csv")
+
+```
+
+# Cálculo del VaR al 95% de confianza
+
+En el siguiente chunk se calcula el VaR y CVaR al 95% correspondiente a en pérdida monetaria, empleando variaciones porcentuales y en pérdida monetaria, empleando P/L del S&P GSCI:
+
+```{r}
+# Se calcula el VaR al 95% de confianza de forma no paramÃ©trica:
+VaRPL=quantile(datosPL$SPGSCI,0.05,na.rm=TRUE)
+VaRr=quantile(datosR$SPGSCI,0.05,na.rm=TRUE)
+
+paste0("El VaR al 95% de confianza P/L es: $",VaRPL," y el VaR en rendimientos es: ",VaRr,"%")
+
+# Se calcula el CVaR al 95% de confianza de forma no paramÃ©trica:
+CVaRPL <- mean(datosPL$SPGSCI[datosPL$SPGSCI <= VaRPL], na.rm = TRUE)
+CVaRR  <- mean(datosR$SPGSCI[datosR$SPGSCI <= VaRr], na.rm = TRUE)
+
+paste0("El CVaR al 95% de confianza P/L es: $",CVaRPL," y el CVaR en rendimientos es: ",CVaRR,"%")
+```
+
+# Cálculo del VaR al 98% de confianza
+
+En el siguiente chunk se calcula el VaR y CVaR al 98% correspondiente a en pérdida monetaria, empleando variaciones porcentuales y en pérdida monetaria, empleando P/L del S&P GSCI:
+
+```{r}
+# Se calcula el VaR al 98% de confianza de forma no paramÃ©trica:
+VaRPL2=quantile(datosPL$SPGSCI,0.02,na.rm=TRUE)
+VaRr2=quantile(datosR$SPGSCI,0.02,na.rm=TRUE)
+
+paste0("El VaR al 98% de confianza P/L es: $",VaRPL," y el VaR en rendimientos es: ",VaRr2,"%")
+
+# Se calcula el CVaR al 98% de confianza de forma no paramÃ©trica:
+CVaRPL2 <- mean(datosPL$SPGSCI[datosPL$SPGSCI <= VaRPL2], na.rm = TRUE)
+CVaRr2  <- mean(datosR$SPGSCI[datosR$SPGSCI <= VaRr2], na.rm = TRUE)
+
+paste0("El CVaR al 98% de confianza P/L es: $",CVaRPL2," y el CVaR en rendimientos es: ",CVaRr2,"%")
+```
+
+# Gráfica S&P GSCI:
+
+```{r}
+plot_ly()%>%add_trace(x=~SPGSCI,data=datosPL,alpha=0.4,
+                      type="histogram",nbins=100,
+                      marker = list(color = "blue",
+                            line = list(color = "black",
+                                        width = 1)),name="Frecuencia de datos"
+)%>%add_segments(x = VaRPL, xend = VaRPL, y = 0, yend = 130, name="VaR P/L",text="VaR P/L")
+```
+
+# VaR y CVaR a 95% de probabilidad de suceso a 1, 2, 3 ,4 y 5 días
+
+```{r, include=FALSE}
+VaR=function(M,sigma,confidence,pdfFunct,VaRt,tsLength=0){
+  
+  # errors:
+  switch(pdfFunct,"t"={
+    if (tsLength<1){
+      stop("The length of the time series must (argument tsLength) be greater than zero when pdfFunct is t. \n tsLength is the length of the time series used for degrees of freedom calculation.")
+    }
+  }
+  )
+  
+  cat("\f")
+  print("Estimating VaR...")
+  
+  cat("\f")
+  print(paste0("Estimating with ",pdfFunct,"pdf VaR at ",confidence*100,"% of confidence..."))
+  
+  # VaR estimation===
+  
+  # VaR:
+  alphaVaR=1-confidence
+  
+  switch(pdfFunct,
+         "norm"={
+           var=qnorm(alphaVaR,0,1)*sigma*sqrt(VaRt)
+         },
+         "t"={
+           nu=tsLength-1
+           var=qt(alphaVaR,nu)*sigma*sqrt(VaRt)
+         },
+         "ged"={
+           nu=1
+           # q GED estimation:
+           lambda = sqrt(2^(-2/nu) * gamma(1/nu)/gamma(3/nu))
+           q = lambda * (2 * qgamma((abs(2 * alphaVaR - 1)), 1/nu))^(1/nu)
+           gedVal = q * sign(2 * alphaVaR - 1) * 1 + 0
+           
+           var=gedVal*sigma*sqrt(VaRt)
+         }
+  )
+  var=M*var
+  
+  cat("\f")
+  #print(paste0("The VaR at ",confidence*100,"% of confidence, for an ammount of $",M," is: ",var))  
+  # output objects:
+  return(var)
+  
+}
+```
+
+```{r, include=FALSE}
+CVaR=function(M,sigma,confidence,pdfFunct,VaRt,tsLength=0){
+  
+# errors:
+switch(pdfFunct,"t"={
+  if (tsLength<1){
+    stop("The length of the time series must (argument tsLength) be greater than zero when pdfFunct is t. \n tsLength is the length of the time series used for degrees of freedom calculation.")
+  }
+}
+)
+
+  cat("\f")
+  print("Estimating CVaR...")
+
+  cat("\f")
+  print(paste0("Estimating with ",pdfFunct,"pdf CVaR at ",confidence*100,"% of confidence..."))
+
+  cvarV=rep(NA,length(sigma))
+  
+
+# CVaR estimation===
+
+  for (a in 1:length(sigma)){  
+# CVaR:
+      alphaCVaR=1-confidence
+      #lowZi=-1/sigma
+      pValsSeq=seq(from=0,to=alphaCVaR,by=0.0001)
+      pValsSeq=pValsSeq[-1]
+
+      switch(pdfFunct,
+             "norm"={
+               qpdf=qnorm(pValsSeq,0,1)
+               cvar=mean((qpdf*sigma[a])*sqrt(VaRt))
+               
+             },
+             "t"={
+               nu=tsLength-1
+               cvar=mean((qt(pValsSeq,nu)*sigma[a])*sqrt(VaRt))
+             },
+             "ged"={
+               nu=1
+               # q GED estimation:
+               lambda = sqrt(2^(-2/nu) * gamma(1/nu)/gamma(3/nu))
+               q = lambda * (2 * qgamma((abs(2 * pValsSeq - 1)), 1/nu))^(1/nu)
+               gedVal = q * sign(2 * pValsSeq - 1) * 1 + 0
+
+               cvar=mean((gedVal*sigma[a])*sqrt(VaRt))
+             }
+      )
+  # lopp a ends here:    
+  cvarV[a]=M*cvar    
+  }
+
+
+  cat("\f")
+#print(paste0("The CVaR at ",confidence*100,"% of confidence, for an ammount of $",M," is: ",cvar))  
+  # output objects:
+  return(cvarV)
+
+}
+```
+
+```{r, include=FALSE}
+# Monto invertido:
+Monto=500000
+
+# Rendimientos históricos del SPGSCI:
+rendimientos=datosR$SPGSCI
+
+# Desviación estándar de los rendimientos:
+sigma=sd(rendimientos)
+
+#Nivel de cofianza:
+nivelConfianza=0.95
+nivelConfianza2=0.98
+
+# Se define la función de probabilidad gaussiana para el cÃ¡lculo del VaR y CVaR:
+pdfFunct="norm"
+
+# Se define el horizonte de tiempo para el cÃ¡lculo del VaR:
+varT1=1
+varT2=2
+varT3=3
+varT4=4
+varT5=5
+CvarT1=1
+CvarT2=2
+CvarT3=3
+CvarT4=4
+CvarT5=5
+
+# Se calcula la función de probabilidad normal para los datos:
+normPdf=dnorm(sort((rendimientos-mean(rendimientos))/sd(rendimientos)),0,1)*100
+
+# Se calcula el VaR al 95% de confianza de forma paramétrica:
+VaRr1=VaR(M=Monto,sigma=sigma,confidence=nivelConfianza,pdfFunct=pdfFunct,VaRt=varT1)
+VaRr2=VaR(M=Monto,sigma=sigma,confidence=nivelConfianza,pdfFunct=pdfFunct,VaRt=varT2)
+VaRr3=VaR(M=Monto,sigma=sigma,confidence=nivelConfianza,pdfFunct=pdfFunct,VaRt=varT3)
+VaRr4=VaR(M=Monto,sigma=sigma,confidence=nivelConfianza,pdfFunct=pdfFunct,VaRt=varT4)
+VaRr5=VaR(M=Monto,sigma=sigma,confidence=nivelConfianza,pdfFunct=pdfFunct,VaRt=varT5)
+CVaRr1=CVaR(M=Monto,sigma=sigma,confidence=nivelConfianza,pdfFunct=pdfFunct,VaRt=CvarT1)
+CVaRr2=CVaR(M=Monto,sigma=sigma,confidence=nivelConfianza,pdfFunct=pdfFunct,VaRt=CvarT2)
+CVaRr3=CVaR(M=Monto,sigma=sigma,confidence=nivelConfianza,pdfFunct=pdfFunct,VaRt=CvarT3)
+CVaRr4=CVaR(M=Monto,sigma=sigma,confidence=nivelConfianza,pdfFunct=pdfFunct,VaRt=CvarT4)
+CVaRr5=CVaR(M=Monto,sigma=sigma,confidence=nivelConfianza,pdfFunct=pdfFunct,VaRt=CvarT5)
+```
+
+```{r}
+paste0("El VaR a 1 días con 95% de confianza es $",VaRr1)
+paste0("El CVaR a 1 días con 95% de confianza es $",CVaRr1)
+paste0("El VaR a 2 días con 95% de confianza es $",VaRr2)
+paste0("El CVaR a 2 días con 95% de confianza es $",CVaRr2)
+paste0("El VaR a 3 días con 95% de confianza es $",VaRr3)
+paste0("El CVaR a 3 días con 95% de confianza es $",CVaRr3)
+paste0("El VaR a 4 días con 95% de confianza es $",VaRr4)
+paste0("El CVaR a 4 días con 95% de confianza es $",CVaRr4)
+paste0("El VaR a 5 días con 95% de confianza es $",VaRr5)
+paste0("El CVaR a 5 días con 95% de confianza es $",CVaRr5)
+```
+
+# VaR y CVaR a 95% de probabilidad de suceso a 1, 2, 3 ,4 y 5 días
+
+```{r, include=FALSE}
+VaRr1_98=VaR(M=Monto,sigma=sigma,confidence=nivelConfianza2,pdfFunct=pdfFunct,VaRt=varT1)
+VaRr2_98=VaR(M=Monto,sigma=sigma,confidence=nivelConfianza2,pdfFunct=pdfFunct,VaRt=varT2)
+VaRr3_98=VaR(M=Monto,sigma=sigma,confidence=nivelConfianza2,pdfFunct=pdfFunct,VaRt=varT3)
+VaRr4_98=VaR(M=Monto,sigma=sigma,confidence=nivelConfianza2,pdfFunct=pdfFunct,VaRt=varT4)
+VaRr5_98=VaR(M=Monto,sigma=sigma,confidence=nivelConfianza2,pdfFunct=pdfFunct,VaRt=varT5)
+CVaRr1_98=CVaR(M=Monto,sigma=sigma,confidence=nivelConfianza2,pdfFunct=pdfFunct,VaRt=CvarT1)
+CVaRr2_98=CVaR(M=Monto,sigma=sigma,confidence=nivelConfianza2,pdfFunct=pdfFunct,VaRt=CvarT2)
+CVaRr3_98=CVaR(M=Monto,sigma=sigma,confidence=nivelConfianza2,pdfFunct=pdfFunct,VaRt=CvarT3)
+CVaRr4_98=CVaR(M=Monto,sigma=sigma,confidence=nivelConfianza2,pdfFunct=pdfFunct,VaRt=CvarT4)
+CVaRr5_98=CVaR(M=Monto,sigma=sigma,confidence=nivelConfianza2,pdfFunct=pdfFunct,VaRt=CvarT5)
+```
+
+```{r}
+paste0("El VaR a 1 días con 98% de confianza es $",VaRr1_98)
+paste0("El CVaR a 1 días con 98% de confianza es $",CVaRr1_98)
+paste0("El VaR a 2 días con 98% de confianza es $",VaRr2_98)
+paste0("El CVaR a 2 días con 98% de confianza es $",CVaRr2_98)
+paste0("El VaR a 3 días con 98% de confianza es $",VaRr3_98)
+paste0("El CVaR a 1 días con 98% de confianza es $",CVaRr3_98)
+paste0("El VaR a 4 días con 98% de confianza es $",VaRr4_98)
+paste0("El CVaR a 1 días con 98% de confianza es $",CVaRr4_98)
+paste0("El VaR a 5 días con 98% de confianza es $",VaRr5_98)
+paste0("El CVaR a 1 días con 98% de confianza es $",CVaRr5_98)
+```
